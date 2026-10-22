@@ -30,6 +30,14 @@ Expected: `200 OK` with Ada's student object. A missing ID returns `404`:
 {"detail":"Student not found"}
 ```
 
+Every GET response includes an `ETag`. For this endpoint, the ETag is the student's `version`, for example `"1"`. The other GET endpoints use an ETag derived from their response data. To make a conditional request, repeat the same GET and copy its ETag into this Bruno header:
+
+| Name | Value |
+| --- | --- |
+| `If-None-Match` | `"1"` |
+
+Expected: `304 Not Modified` with an empty body when the response is unchanged. If its ETag has changed, the response is `200 OK` with the current representation and ETag.
+
 ## Get a Student's Classes
 
 **GET** `{{baseUrl}}/students/1/classes`
@@ -64,6 +72,12 @@ First run `GET {{baseUrl}}/students/1` and use the returned `version` value.
 
 **PUT** `{{baseUrl}}/students/1`
 
+Add this Bruno request header using the ETag returned by GET:
+
+| Name | Value |
+| --- | --- |
+| `If-Match` | `"1"` |
+
 ```json
 {
   "first_name": "Ada",
@@ -73,9 +87,9 @@ First run `GET {{baseUrl}}/students/1` and use the returned `version` value.
 }
 ```
 
-Expected: `200 OK`, with the updated student and an incremented `version` (`2` in this example).
+Expected: `200 OK`, with the updated student and an incremented `version` (`2` in this example). The response ETag is updated to `"2"`.
 
-To verify lost-update protection, send the same PUT again with the old `version` (`1`). It returns `409 Conflict`; GET the student again and retry using its current version.
+To verify lost-update protection, send the same PUT again with the old `If-Match` value (`"1"`). It returns `412 Precondition Failed`. GET the student again and retry using its current ETag and body version. The body `version` is also checked; without an `If-Match` header, a stale body version returns `409 Conflict`.
 
 An invalid email, blank name, or missing/less-than-one version returns `422 Unprocessable Entity`.
 

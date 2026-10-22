@@ -1,6 +1,8 @@
+import hashlib
+import json
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +13,8 @@ from .database import get_session
 from .models import SchoolClass, Student
 
 DatabaseSession = Annotated[Session, Depends(get_session)]
+IfMatchHeader = Annotated[str | None, Header()]
+IfNoneMatchHeader = Annotated[str | None, Header()]
 
 
 NonBlankName = Annotated[
@@ -47,12 +51,55 @@ class ClassResponse(BaseModel):
     subject: str
     student_id: int
 
+
+def _matches_if_none_match(if_none_match: str | None, etag: str) -> bool:
+    if if_none_match is None:
+        return False
+    return any(
+        tag.strip() in {"*", etag, f"W/{etag}"}
+        for tag in if_none_match.split(",")
+    )
+
+
+def _matches_if_match(if_match: str, version: int) -> bool:
+    current_etag = f'"{version}"'
+    return any(
+        tag.strip() in {"*", current_etag}
+        for tag in if_match.split(",")
+    )
+
+
+def _etag_for(content: object) -> str:
+    body = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return f'"{hashlib.sha256(body.encode("utf-8")).hexdigest()}"'
+
+
+def _conditional_response(
+    etag: str,
+    if_none_match: str | None,
+    response: Response,
+) -> Response | None:
+    response.headers["ETag"] = etag
+    if _matches_if_none_match(if_none_match, etag):
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+    return None
+
+
 app = FastAPI()
 
 
-@app.get("/")
-def read_root() -> dict[str, str]:
-    return {"message": "Hello from kigs!"}
+@app.get("/", response_model=None)
+def read_root(
+    response: Response,
+    if_none_match: IfNoneMatchHeader = None,
+) -> dict[str, str] | Response:
+    payload = {"message": "Hello from kigs!"}
+    not_modified = _conditional_response(
+        _etag_for(payload),
+        if_none_match,
+        response,
+    )
+    return not_modified if not_modified is not None else payload
 
 
 @app.post(
@@ -89,10 +136,17 @@ def update_student(
     student_id: int,
     student_data: StudentUpdate,
     database_session: DatabaseSession,
+    response: Response,
+    if_match: IfMatchHeader = None,
 ) -> Student:
     student = database_session.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    if if_match is not None and not _matches_if_match(if_match, student.version):
+        raise HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail="If-Match does not match the current student version",
+        )
     if student.version != student_data.version:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -107,7 +161,11 @@ def update_student(
     except StaleDataError as error:
         database_session.rollback()
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=(
+                status.HTTP_412_PRECONDITION_FAILED
+                if if_match is not None
+                else status.HTTP_409_CONFLICT
+            ),
             detail="Student was updated concurrently; fetch the latest version and retry",
         ) from error
     except IntegrityError as error:
@@ -119,31 +177,53 @@ def update_student(
             ) from error
         raise
     database_session.refresh(student)
+    response.headers["ETag"] = f'"{student.version}"'
     return student
 
 
 @app.get("/students", response_model=list[StudentResponse])
-def read_students(database_session: DatabaseSession) -> list[Student]:
+def read_students(
+    database_session: DatabaseSession,
+    response: Response,
+    if_none_match: IfNoneMatchHeader = None,
+) -> list[Student] | Response:
     statement = select(Student).order_by(Student.id)
-    return list(database_session.scalars(statement).all())
+    students = list(database_session.scalars(statement).all())
+    content = [
+        StudentResponse.model_validate(student).model_dump(mode="json")
+        for student in students
+    ]
+    not_modified = _conditional_response(
+        _etag_for(content),
+        if_none_match,
+        response,
+    )
+    return not_modified if not_modified is not None else students
 
 
 @app.get("/students/{student_id}", response_model=StudentResponse)
 def read_student(
     student_id: int,
     database_session: DatabaseSession,
-) -> Student:
+    response: Response,
+    if_none_match: IfNoneMatchHeader = None,
+) -> Student | Response:
     student = database_session.get(Student, student_id)
     if student is None:
         raise HTTPException(status_code=404, detail="Student not found")
-    return student
+
+    etag = f'"{student.version}"'
+    not_modified = _conditional_response(etag, if_none_match, response)
+    return not_modified if not_modified is not None else student
 
 
 @app.get("/students/{student_id}/classes", response_model=list[ClassResponse])
 def read_student_classes(
     student_id: int,
     database_session: DatabaseSession,
-) -> list[SchoolClass]:
+    response: Response,
+    if_none_match: IfNoneMatchHeader = None,
+) -> list[SchoolClass] | Response:
     if database_session.get(Student, student_id) is None:
         raise HTTPException(status_code=404, detail="Student not found")
     statement = (
@@ -151,10 +231,34 @@ def read_student_classes(
         .where(SchoolClass.student_id == student_id)
         .order_by(SchoolClass.id)
     )
-    return list(database_session.scalars(statement).all())
+    classes = list(database_session.scalars(statement).all())
+    content = [
+        ClassResponse.model_validate(school_class).model_dump(mode="json")
+        for school_class in classes
+    ]
+    not_modified = _conditional_response(
+        _etag_for(content),
+        if_none_match,
+        response,
+    )
+    return not_modified if not_modified is not None else classes
 
 
 @app.get("/classes", response_model=list[ClassResponse])
-def read_classes(database_session: DatabaseSession) -> list[SchoolClass]:
+def read_classes(
+    database_session: DatabaseSession,
+    response: Response,
+    if_none_match: IfNoneMatchHeader = None,
+) -> list[SchoolClass] | Response:
     statement = select(SchoolClass).order_by(SchoolClass.id)
-    return list(database_session.scalars(statement).all())
+    classes = list(database_session.scalars(statement).all())
+    content = [
+        ClassResponse.model_validate(school_class).model_dump(mode="json")
+        for school_class in classes
+    ]
+    not_modified = _conditional_response(
+        _etag_for(content),
+        if_none_match,
+        response,
+    )
+    return not_modified if not_modified is not None else classes
