@@ -1,0 +1,17 @@
+[project]
+name = "kigs"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "ZyRaNex", email = "eeggaall@googlemail.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+kigs = "kigs:main"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
