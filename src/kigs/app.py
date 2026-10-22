@@ -1,10 +1,11 @@
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from pydantic import BaseModel, ConfigDict, EmailStr, StringConstraints
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 
 from .database import get_session
 from .models import SchoolClass, Student
@@ -24,6 +25,10 @@ class StudentCreate(BaseModel):
     email: EmailStr
 
 
+class StudentUpdate(StudentCreate):
+    version: int = Field(ge=1)
+
+
 class StudentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -31,6 +36,7 @@ class StudentResponse(BaseModel):
     first_name: str
     last_name: str
     email: str
+    version: int
 
 
 class ClassResponse(BaseModel):
@@ -66,6 +72,44 @@ def create_student(
     database_session.add(student)
     try:
         database_session.commit()
+    except IntegrityError as error:
+        database_session.rollback()
+        if getattr(getattr(error.orig, "diag", None), "constraint_name", None) == "students_email_key":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A student with this email already exists",
+            ) from error
+        raise
+    database_session.refresh(student)
+    return student
+
+
+@app.put("/students/{student_id}", response_model=StudentResponse)
+def update_student(
+    student_id: int,
+    student_data: StudentUpdate,
+    database_session: DatabaseSession,
+) -> Student:
+    student = database_session.get(Student, student_id)
+    if student is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    if student.version != student_data.version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Student has changed; fetch the latest version and retry",
+        )
+
+    student.first_name = student_data.first_name
+    student.last_name = student_data.last_name
+    student.email = str(student_data.email)
+    try:
+        database_session.commit()
+    except StaleDataError as error:
+        database_session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Student was updated concurrently; fetch the latest version and retry",
+        ) from error
     except IntegrityError as error:
         database_session.rollback()
         if getattr(getattr(error.orig, "diag", None), "constraint_name", None) == "students_email_key":

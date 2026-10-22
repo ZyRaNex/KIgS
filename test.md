@@ -14,7 +14,8 @@ Expected: `200 OK`, with a JSON array of students:
     "id": 1,
     "first_name": "Ada",
     "last_name": "Lovelace",
-    "email": "ada@example.edu"
+    "email": "ada@example.edu",
+    "version": 1
   }
 ]
 ```
@@ -55,7 +56,28 @@ Set the request body type to JSON and paste:
 }
 ```
 
-Expected: `201 Created`, with the saved student object. Its `id` is assigned by PostgreSQL.
+Expected: `201 Created`, with the saved student object. PostgreSQL assigns its `id`; its initial `version` is `1`.
+
+## Update a Student
+
+First run `GET {{baseUrl}}/students/1` and use the returned `version` value.
+
+**PUT** `{{baseUrl}}/students/1`
+
+```json
+{
+  "first_name": "Ada",
+  "last_name": "Lovelace",
+  "email": "ada@example.edu",
+  "version": 1
+}
+```
+
+Expected: `200 OK`, with the updated student and an incremented `version` (`2` in this example).
+
+To verify lost-update protection, send the same PUT again with the old `version` (`1`). It returns `409 Conflict`; GET the student again and retry using its current version.
+
+An invalid email, blank name, or missing/less-than-one version returns `422 Unprocessable Entity`.
 
 ## Validate Email
 

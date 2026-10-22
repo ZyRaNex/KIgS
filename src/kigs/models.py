@@ -14,7 +14,10 @@ class Student(Base):
     first_name: Mapped[str] = mapped_column(Text, nullable=False)
     last_name: Mapped[str] = mapped_column(Text, nullable=False)
     email: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     classes: Mapped[list["SchoolClass"]] = relationship(back_populates="student")
+
+    __mapper_args__ = {"version_id_col": version}
 
 
 class SchoolClass(Base):
