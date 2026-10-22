@@ -7,7 +7,10 @@ authors = [
     { name = "ZyRaNex", email = "eeggaall@googlemail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "fastapi>=0.159.1",
+    "uvicorn>=0.54.0",
+]
 
 [project.scripts]
 kigs = "kigs:main"
