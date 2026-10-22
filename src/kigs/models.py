@@ -15,7 +15,11 @@ class Student(Base):
     last_name: Mapped[str] = mapped_column(Text, nullable=False)
     email: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    classes: Mapped[list[SchoolClass]] = relationship(back_populates="student")
+    classes: Mapped[list[SchoolClass]] = relationship(
+        back_populates="student",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
 

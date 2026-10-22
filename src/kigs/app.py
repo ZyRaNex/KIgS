@@ -181,6 +181,37 @@ def update_student(
     return student
 
 
+@app.delete("/students/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_student(
+    student_id: int,
+    database_session: DatabaseSession,
+    if_match: IfMatchHeader = None,
+) -> Response:
+    student = database_session.get(Student, student_id)
+    if student is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    if if_match is not None and not _matches_if_match(if_match, student.version):
+        raise HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail="If-Match does not match the current student version",
+        )
+
+    try:
+        database_session.delete(student)
+        database_session.commit()
+    except StaleDataError as error:
+        database_session.rollback()
+        raise HTTPException(
+            status_code=(
+                status.HTTP_412_PRECONDITION_FAILED
+                if if_match is not None
+                else status.HTTP_409_CONFLICT
+            ),
+            detail="Student was updated concurrently; fetch the latest version and retry",
+        ) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @app.get("/students", response_model=list[StudentResponse])
 def read_students(
     database_session: DatabaseSession,

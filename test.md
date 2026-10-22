@@ -93,6 +93,20 @@ To verify lost-update protection, send the same PUT again with the old `If-Match
 
 An invalid email, blank name, or missing/less-than-one version returns `422 Unprocessable Entity`.
 
+## Delete a Student
+
+First run `GET {{baseUrl}}/students/{id}` and use its current `ETag`.
+
+**DELETE** `{{baseUrl}}/students/{id}`
+
+Add this header with the quoted version from the GET response:
+
+| Name | Value |
+| --- | --- |
+| `If-Match` | `"1"` |
+
+Expected: `204 No Content`. The student's classes are deleted through the foreign-key cascade. A stale ETag returns `412`; deleting a missing student returns `404`.
+
 ## Validate Email
 
 **POST** `{{baseUrl}}/students`
