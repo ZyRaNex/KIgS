@@ -72,6 +72,22 @@ Set the request body type to JSON and paste:
 
 Expected: `201 Created`, with the saved student object. PostgreSQL assigns its `id`; its initial `version` is `1`.
 
+## Create a Class
+
+**POST** `{{baseUrl}}/classes`
+
+Set the request body type to JSON and paste:
+
+```json
+{
+  "name": "Geometry",
+  "subject": "Mathematics",
+  "student_id": 1
+}
+```
+
+Expected: `201 Created`, with the saved class object including its assigned `id`. A missing student returns `404`; blank `name`/`subject` or a non-positive `student_id` returns `422`.
+
 ## Update a Student
 
 First run `GET {{baseUrl}}/students/1` and use the returned `version` value.
