@@ -1,5 +1,3 @@
-from typing import ClassVar
-
 from sqlalchemy import ForeignKey, Integer, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -10,7 +8,7 @@ class Base(DeclarativeBase):
 
 class Student(Base):
     __tablename__ = "students"
-    __table_args__: ClassVar[dict[str, str]] = {"schema": "school"}
+    __table_args__ = {"schema": "school"}  # noqa: RUF012
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     first_name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -19,12 +17,12 @@ class Student(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     classes: Mapped[list[SchoolClass]] = relationship(back_populates="student")
 
-    __mapper_args__: ClassVar[dict[str, object]] = {"version_id_col": version}
+    __mapper_args__ = {"version_id_col": version}  # noqa: RUF012
 
 
 class SchoolClass(Base):
     __tablename__ = "classes"
-    __table_args__: ClassVar[dict[str, str]] = {"schema": "school"}
+    __table_args__ = {"schema": "school"}  # noqa: RUF012
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
