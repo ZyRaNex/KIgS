@@ -2,7 +2,7 @@ import hashlib
 import json
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -235,6 +235,22 @@ def read_students(
 @app.get("/students/{student_id}", response_model=StudentResponse)
 def read_student(
     student_id: int,
+    database_session: DatabaseSession,
+    response: Response,
+    if_none_match: IfNoneMatchHeader = None,
+) -> Student | Response:
+    student = database_session.get(Student, student_id)
+    if student is None:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    etag = f'"{student.version}"'
+    not_modified = _conditional_response(etag, if_none_match, response)
+    return not_modified if not_modified is not None else student
+
+
+@app.get("/student", response_model=StudentResponse)
+def read_student_by_query(
+    student_id: Annotated[int, Query(gt=0)],
     database_session: DatabaseSession,
     response: Response,
     if_none_match: IfNoneMatchHeader = None,

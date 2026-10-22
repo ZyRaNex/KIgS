@@ -30,6 +30,12 @@ Expected: `200 OK` with Ada's student object. A missing ID returns `404`:
 {"detail":"Student not found"}
 ```
 
+## Get One Student by Query
+
+**GET** `{{baseUrl}}/student?student_id=1`
+
+Expected: the same student response and version-based `ETag` as `GET /students/1`. A missing student returns `404`; a missing, non-integer, or non-positive `student_id` returns `422`.
+
 Every GET response includes an `ETag`. For this endpoint, the ETag is the student's `version`, for example `"1"`. The other GET endpoints use an ETag derived from their response data. To make a conditional request, repeat the same GET and copy its ETag into this Bruno header:
 
 | Name | Value |
